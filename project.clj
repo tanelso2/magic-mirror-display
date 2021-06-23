@@ -19,7 +19,11 @@
                  [metosin/reitit "0.5.12"]                 
                  [pez/clerk "1.0.0"]
                  [venantius/accountant "0.2.5"
-                  :exclusions [org.clojure/tools.reader]]]
+                  :exclusions [org.clojure/tools.reader]]
+                 [clj-http "3.12.2"]
+                 [org.clojure/core.async "1.3.618"]
+                 [org.clojure/data.json "2.3.1"]
+                 [cljs-http "0.1.46"]]
 
   :jvm-opts ["-Xmx1G"]
   
@@ -66,19 +70,19 @@
               :output-dir "target/cljsbuild/public/js/out"
               :source-map true
               :optimizations :none
-              :pretty-print  true}}
+              :pretty-print  true}}}}
 
 
 
-            }
-   }
+            
+   
 
   :figwheel
   {:http-server-root "public"
    :server-port 3449
    :nrepl-port 7002
-   :nrepl-middleware [cider.piggieback/wrap-cljs-repl
-                      ]
+   :nrepl-middleware [cider.piggieback/wrap-cljs-repl]
+                      
    :css-dirs ["resources/public/css"]
    :ring-handler magic-mirror-display.handler/app}
 
@@ -93,13 +97,13 @@
                                   [figwheel-sidecar "0.5.20"]
                                   [nrepl "0.8.3"]
                                   [thheller/shadow-cljs "2.14.3"]
-                                  [pjstadig/humane-test-output "0.10.0"]
+                                  [pjstadig/humane-test-output "0.10.0"]]
                                   
- ]
+ 
 
                    :source-paths ["env/dev/clj"]
-                   :plugins [[lein-figwheel "0.5.20"]
-]
+                   :plugins [[lein-figwheel "0.5.20"]]
+
 
                    :injections [(require 'pjstadig.humane-test-output)
                                 (pjstadig.humane-test-output/activate!)]

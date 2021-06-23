@@ -6,7 +6,9 @@
    [reitit.frontend :as reitit]
    [clerk.core :as clerk]
    [clojure.string :as str]
-   [accountant.core :as accountant]))
+   [accountant.core :as accountant]
+   [cljs-http.client :as http]
+   [cljs.core.async :refer [<! go]]))
 
 ;; -------------------------
 ;; Routes
@@ -27,22 +29,34 @@
 ;; -------------------------
 ;; Page components
 
-(def state (atom {
-                      :music {
-                              :artist "2 Mello"
-                              :song "Old to the New"}}))
+(def state (atom {:music
+                  {:artist "Artist Goes Here"
+                   :song "Song title goes here"}}))
+
+(def weather-state (atom nil))
 
 (def timer (atom (js/Date.)))
 
 (defonce time-updater (js/setInterval
                         #(reset! timer (js/Date.)) 1000))
 
+(defn fetch-weather []
+  (go (let [resp (<! (http/get "/weather"))
+            body (:body resp)]
+        (reset! weather-state body))))
+
+(defonce weather-updater (js/setInterval #(fetch-weather) 5000))
+
 (defn clock []
   (let [time-str (-> @timer
                      .toTimeString
                      (str/split " ")
-                     first)]
-    [:div time-str]))
+                     first)
+        date-str (-> @timer
+                     .toDateString)]
+    [:div
+      [:div time-str]
+      [:div date-str]]))
 
 (defn music-display []
   (fn []
@@ -54,9 +68,19 @@
 
 (defn weather-display []
   (fn []
-    (let [weather (:weather @state)]
-      [:span
-       [:h1 "Weather goes here"]])))
+    (let [weather @weather-state]
+      (if (nil? weather)
+        [:span [:p "Loading weather...."]]
+        (let [icon (get-in weather [:weather 0 :icon])
+              iconurl (str "https://openweathermap.org/img/w/" icon ".png")
+              curr-temp (get-in weather [:main :temp])
+              max-temp (get-in weather [:main :temp_max])
+              min-temp (get-in weather [:main :temp_min])]
+          [:span
+            [:img {:src iconurl}]
+            [:h2 "Current " curr-temp " °F"]
+            [:h2 "Max " max-temp " °F"]
+            [:h2 "Min " min-temp " °F"]])))))
 
 (defn home-page []
   (fn []

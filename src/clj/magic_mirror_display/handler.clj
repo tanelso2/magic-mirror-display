@@ -3,7 +3,10 @@
    [reitit.ring :as reitit-ring]
    [magic-mirror-display.middleware :refer [middleware]]
    [hiccup.page :refer [include-js include-css html5]]
-   [config.core :refer [env]]))
+   [config.core :refer [env]]
+   [clojure.data.json :as json]
+   [clj-http.client :as client]
+   [clojure.string :as str]))
 
 (def mount-target
   [:div#app
@@ -26,6 +29,21 @@
     (include-js "/js/app.js")
     [:script "magic_mirror_display.core.init_BANG_()"]]))
 
+(defn get-weather []
+  (let [url "https://api.openweathermap.org/data/2.5/weather"
+        zipcode "63105"
+        apikey (str/trim (slurp "openweatherapikey.txt"))
+        resp (client/get url {:query-params {"appid" apikey
+                                             "zip" zipcode
+                                             "units" "imperial"}
+                              :accept :json})]
+    (:body resp)))
+
+(defn weather-handler
+  [_request]
+  {:status 200
+   :headers {"Content-Type" "application/json"}
+   :body (get-weather)})
 
 (defn index-handler
   [_request]
@@ -41,7 +59,8 @@
       ["" {:get {:handler index-handler}}]
       ["/:item-id" {:get {:handler index-handler
                           :parameters {:path {:item-id int?}}}}]]
-     ["/about" {:get {:handler index-handler}}]])
+     ["/about" {:get {:handler index-handler}}]
+     ["/weather" {:get {:handler weather-handler}}]])
    (reitit-ring/routes
     (reitit-ring/create-resource-handler {:path "/" :root "/public"})
     (reitit-ring/create-default-handler))

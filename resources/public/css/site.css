@@ -5,13 +5,11 @@
   padding-top: 72px;
   -webkit-font-smoothing: antialiased;
   font-size: 1.125em;
-  color: #333;
+  color: #eeeeee;
   line-height: 1.5em;
+  background-color: #000000;
 }
 
-h1, h2, h3 {
-  color: #000;
-}
 h1 {
   font-size: 2.5em
 }
