@@ -17,3 +17,5 @@ pom.xml.asc
 /.shadow-cljs/
 /resources/public/js/
 openweatherapikey.txt
+spotify-creds.json
+.spotify-access-token.edn

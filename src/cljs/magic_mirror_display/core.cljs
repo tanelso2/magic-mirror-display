@@ -27,11 +27,9 @@
     (:path (reitit/match-by-name router route))))
 
 ;; -------------------------
-;; Page components
+;; State
 
-(def state (atom {:music
-                  {:artist "Artist Goes Here"
-                   :song "Song title goes here"}}))
+(def music-state (atom nil))
 
 (def weather-state (atom nil))
 
@@ -47,6 +45,21 @@
 
 (defonce weather-updater (js/setInterval #(fetch-weather) 5000))
 
+(defn fetch-now-playing []
+  (go (let [resp (<! (http/get "/now-playing"))
+            status (:status resp)
+            new-state (case status
+                        204 :not-playing
+                        200 (-> resp
+                               (:body))
+                        :error)]
+        (reset! music-state new-state))))
+
+(defonce now-playing-updater (js/setInterval #(fetch-now-playing) 5000))
+
+;; -------------------------
+;; Page components
+
 (defn clock []
   (let [time-str (-> @timer
                      .toTimeString
@@ -58,13 +71,28 @@
       [:div time-str]
       [:div date-str]]))
 
+(defn artist-display
+  [artists]
+  ; deref music-state so reagent knows when to update it
+  (let [_ @music-state]
+    (if (= 1 (count artists))
+      [:h2 "Artist: " (get-in artists [0 :name])]
+      (let [artist-names (map :name artists)
+            names (str/join ",  " artist-names)]
+        [:h2 "Artists: " names]))))
+
 (defn music-display []
   (fn []
-    (let [music (:music @state)]
-      [:span.main
-       [:marquee [:h1 "NOW PLAYING"]]
-       [:h2 (:artist music)]
-       [:h2 (:song music)]])))
+    (let [music @music-state]
+      (if (nil? music)
+        [:span [:p "Loading music..."]]
+        (let [track (:item music)
+              track-name (:name track)
+              artists (:artists track)]
+          [:span.main
+           [:marquee [:h1 "NOW PLAYING"]]
+           [:h2 "Track: " track-name]
+           [artist-display artists]])))))
 
 (defn weather-display []
   (fn []
@@ -89,39 +117,13 @@
      [music-display]
      [weather-display]]))
 
-(defn items-page []
-  (fn []
-    [:span.main
-     [:h1 "The items of magic-mirror-display"]
-     [:ul (map (fn [item-id]
-                 [:li {:name (str "item-" item-id) :key (str "item-" item-id)}
-                  [:a {:href (path-for :item {:item-id item-id})} "Item: " item-id]])
-               (range 1 60))]]))
-
-
-(defn item-page []
-  (fn []
-    (let [routing-data (session/get :route)
-          item (get-in routing-data [:route-params :item-id])]
-      [:span.main
-       [:h1 (str "Item " item " of magic-mirror-display")]
-       [:p [:a {:href (path-for :items)} "Back to the list of items"]]])))
-
-
-(defn about-page []
-  (fn [] [:span.main
-          [:h1 "About magic-mirror-display"]]))
-
 
 ;; -------------------------
 ;; Translate routes -> page components
 
 (defn page-for [route]
   (case route
-    :index #'home-page
-    :about #'about-page
-    :items #'items-page
-    :item #'item-page))
+    :index #'home-page))
 
 
 ;; -------------------------
