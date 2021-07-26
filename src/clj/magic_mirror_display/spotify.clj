@@ -9,7 +9,7 @@
   (:import
    [java.util Date]))
 
-(defn get-spotify-creds []
+(defn get-spotify-creds [] 
   (-> "spotify-creds.json"
       (slurp)
       (json/read-str :key-fn keyword)))
