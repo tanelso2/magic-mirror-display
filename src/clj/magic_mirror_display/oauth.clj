@@ -6,50 +6,10 @@
    [clojure.java.io :as io]
    [clojure.string :as str]
    [magic-mirror-display.util :as util]
-   [ring.util.response :refer [redirect]])
+   [ring.util.response :refer [redirect]]
+   [clojure.tools.trace :as trace])
   (:import
    [java.util Date]))
-
-; oauth flow customization ...
-; redirect url
-; oauth start path?
-; auth token file
-; check for refresh
-; url to sign in to
-
-
-(defn get-standard-oauth-config
-  [{:keys [name access-token-url authorize-url scopes]}]
-  (let [access-token-file (str "." name "-access-token.edn")
-        redirect-uri (str "http://localhost:3000/" name "_oauth_finish")
-        creds-file (str name "-creds.json")
-        auth-header-fn (fn [] (basic-b64-auth-header creds-file))]
-       ; oauth-start-handler
-       ; oauth-finish-handler 
-    {:access-token-file access-token-file
-     :redirect-uri redirect-uri
-     :creds-file creds-file
-     :auth-header-fn auth-header-fn
-     :access-token-url access-token-url
-     :authorize-url authorize-url 
-     :scopes scopes
-     :scope-str (str/join " " scopes)}))
-
-(defn oauth-start-handler [m _req]
- (let [{:keys [id secret]} (get-creds-from-file (:creds-file m))
-       url (:authorize-url m)
-       query-params {"client_id" id
-                     "response_type" "code"
-                     "redirect_uri" (:redirect-uri m)
-                     "scope" (:scope-str m)}
-       full-url (util/unparse-url url query-params)]
-    (redirect full-url)))
-
-(defn oauth-finish-handler [m request]
-  (let [code (get-in request [:query-params "code"])
-        _ (fetch-new-access-token! m code)]
-    {:status 200
-     :body "Oauth flow complete, you can close this tab"}))
 
 (defn get-creds-from-file
   [f]
@@ -70,7 +30,42 @@
         encoded-auth (util/base64-encode auth-str)];)]
     (str "Basic " encoded-auth)))
 
+(defn reddit-auth-header
+  [creds-file]
+  (let [{:keys [id secret]} (get-creds-from-file creds-file)
+        auth-str (str id ":")]
+    (str "Basic " auth-str)))
+
   
+
+; oauth flow customization ...
+; redirect url
+; oauth start path?
+; auth token file
+; check for refresh
+; url to sign in to
+
+
+(defn get-standard-oauth-config
+  [{:keys [name access-token-url authorize-url scopes authorize-extra-body extra-headers]}]
+  (let [access-token-file (str "." name "-access-token.edn")
+        redirect-uri (str "http://localhost:3000/" name "_oauth_finish")
+        creds-file (str name "-creds.json")
+        auth-header-fn (fn [] (basic-b64-auth-header creds-file))]
+    {:access-token-file access-token-file
+     :redirect-uri redirect-uri
+     :creds-file creds-file
+     :auth-header-fn auth-header-fn
+     :access-token-url access-token-url
+     :authorize-url authorize-url 
+     :scopes scopes
+     :scope-str (str/join " " scopes)
+     :oauth-start-path (str "/" name "_oauth_start")
+     :authorize-extra-body authorize-extra-body
+     :oauth-finish-path (str "/" name "_oauth_finish")
+     :extra-headers extra-headers}))
+
+
   
 
 (defn get-spotify-creds []
@@ -93,7 +88,7 @@
         encoded-auth (util/base64-encode auth-str)]
     (str "Basic " encoded-auth)))
 
-(def *access-token-file* ".spotify-access-token.edn")
+(def ^:dynamic *access-token-file* ".spotify-access-token.edn")
 
 (defn write-access-token-file!
   ([x] (write-access-token-file! {:access-token-file *access-token-file*} x))
@@ -105,14 +100,20 @@
   [m code]
   (let [{:keys [access-token-url 
                 redirect-uri 
-                auth-header-fn]} m
-        headers {"Content-Type" "application/x-www-form-url-encoded"
-                 "Authorization" (auth-header-fn)}
+                auth-header-fn
+                extra-headers]} m
+        headers (merge 
+                  {"Content-Type" "application/x-www-form-urlencoded"
+                   "Authorization" (auth-header-fn)}
+                  extra-headers)
         body {"grant_type" "authorization_code"
               "code" code
               "redirect_uri" redirect-uri}
-        resp (client/post url {:headers headers
-                               :form-params body})
+        resp (trace/trace 
+               (client/post access-token-url 
+                {:headers headers
+                 :form-params body
+                 :accept :json}))
         body-str (:body resp)
         body (json/read-str body-str :key-fn keyword)]
     (write-access-token-file! m body)
@@ -155,21 +156,40 @@
              (edn/read-string)))))
 
 (defn refresh-token!
-  []
-  (let [x (read-access-token-file)
-        refresh-token (get x :refresh_token)
-        url "https://accounts.spotify.com/api/token"
-        headers {"Content-Type" "application/x-www-form-url-encoded"
-                 "Authorization" (get-spotify-auth-header)}
-        body {"grant_type" "refresh_token"
-              "refresh_token" refresh-token}
-        resp (client/post url {:headers headers
-                               :form-params body})
-        body-str (:body resp)
-        body (json/read-str body-str :key-fn keyword)
-        new-x (merge x body)]
-    (write-access-token-file! new-x)
-    (:access_token new-x)))
+  ([]
+   (let [x (read-access-token-file)
+         refresh-token (get x :refresh_token)
+         url "https://accounts.spotify.com/api/token"
+         headers {"Content-Type" "application/x-www-form-url-encoded"
+                  "Authorization" (get-spotify-auth-header)
+                  "User-Agent" "yassss"}
+         body {"grant_type" "refresh_token"
+               "refresh_token" refresh-token}
+         resp (client/post url {:headers headers
+                                :form-params body})
+         body-str (:body resp)
+         body (json/read-str body-str :key-fn keyword)
+         new-x (merge x body)]
+     (write-access-token-file! new-x)
+     (:access_token new-x)))
+  ([m]
+   (println "Refreshing token!")
+   (let [{:keys [extra-headers access-token-url]} m
+         x (read-access-token-file m)
+         refresh-token (get x :refresh_token)
+         headers (merge 
+                   {"Content-Type" "application/x-www-form-url-encoded"
+                    "Authorization" ((:auth-header-fn m))}
+                   extra-headers)
+         body {"grant_type" "refresh_token"
+               "refresh_token" refresh-token}
+         resp (client/post access-token-url {:headers headers
+                                             :form-params body})
+         body-str (:body resp)
+         body (json/read-str body-str :key-fn keyword)
+         new-x (merge x body)]
+     (write-access-token-file! m new-x)
+     (:access_token new-x))))
 
 (defn get-access-token!
   "Gets the access token to access spotify. May refresh the token if needed.
@@ -185,4 +205,23 @@
          (if (needs-refresh? m)
            (refresh-token! m)
            access-token))
-       (throw "No access token file found, wtf dude")))))
+       (throw (Exception. "No access token file found, wtf dude"))))))
+
+(defn oauth-start-handler [m _req]
+ (let [{:keys [id secret]} (get-creds-from-file (:creds-file m))
+       url (:authorize-url m)
+       default-query-params {"client_id" id
+                             "response_type" "code"
+                             "redirect_uri" (:redirect-uri m)
+                             "scope" (:scope-str m)}
+       extra-query-params (:authorize-extra-body m)
+       query-params (merge default-query-params extra-query-params)
+       full-url (util/unparse-url url query-params)]
+    (redirect full-url)))
+
+(defn oauth-finish-handler [m request]
+  (let [code (get-in request [:query-params "code"])
+        _ (fetch-new-access-token! m code)]
+    {:status 200
+     :headers {"Content-Type" "text/html"}
+     :body "Oauth flow complete, you can close this tab"}))

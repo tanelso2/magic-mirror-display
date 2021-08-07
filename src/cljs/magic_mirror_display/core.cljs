@@ -19,7 +19,8 @@
     ["/items"
      ["" :items]
      ["/:item-id" :item]]
-    ["/about" :about]]))
+    ["/about" :about]
+    ["/reddit" :reddit]]))
 
 (defn path-for [route & [params]]
   (if params
@@ -34,6 +35,8 @@
 (def weather-state (atom nil))
 
 (def timer (atom (js/Date.)))
+
+(def reddit-state (atom nil))
 
 (defonce time-updater (js/setInterval
                         #(reset! timer (js/Date.)) 1000))
@@ -56,6 +59,12 @@
         (reset! music-state new-state))))
 
 (defonce now-playing-updater (js/setInterval #(fetch-now-playing) 5000))
+
+(defn fetch-saved-link! []
+  (go (let [resp (<! (http/get "/saved/random"))
+            body (-> resp
+                     :body)]
+        (reset! reddit-state body))))
 
 ;; -------------------------
 ;; Page components
@@ -94,6 +103,39 @@
            [:h2 "Track: " track-name]
            [artist-display artists]])))))
 
+(defn is-image-link? [url]
+  ; TODO: Remove query params and fragments from url
+  (let [suf #(str/ends-with? url %)
+        pre #(str/starts-with? url %)
+        con #(str/includes? url %)]
+    (or (suf ".jpg") 
+        (suf ".jpeg")
+        (suf ".gif")
+        (suf ".png")
+        (suf ".gifv") ; not sure if this will work
+        (con "gyfcat.com"))))
+
+(defn random-link-display []
+  (fn []
+    (let [saved-link @reddit-state]
+      [:span
+        [:button {:on-click #(fetch-saved-link!)} "ANOTHER"]
+        (if (nil? saved-link)
+          (let [_ (fetch-saved-link!)] 
+            [:span [:p "loading reddit data...."]])
+          (let [{:keys [data kind]} saved-link]
+            [:span
+              (case kind
+                "t1" [:span "Comments not implemented yet"]
+                "t3" (let [{:keys [url]} data] 
+                      [:span 
+                        [:p "t3"]
+                        [:p (str "Url is " url)]
+                        (if (is-image-link? url)
+                          [:img {:src url}])]))]))])))
+
+    
+
 (defn weather-display []
   (fn []
     (let [weather @weather-state]
@@ -110,20 +152,32 @@
             [:h2 "Max " max-temp " °F"]
             [:h2 "Min " min-temp " °F"]])))))
 
+(defn current-task-link []
+  (fn []
+    [:span
+     [:a {:href "/reddit_oauth_start"} "REDDIT OAUTH QUICKLINK"]]))
+
 (defn home-page []
   (fn []
     [:span.main
+     [current-task-link]
      [clock]
      [music-display]
      [weather-display]]))
 
 
-;; -------------------------
-;; Translate routes -> page components
+(defn reddit-page []
+  (fn []
+    [:span.main
+     [random-link-display]]))
 
+
+;; -------------------------
+;; Translate routes -> page components 
 (defn page-for [route]
   (case route
-    :index #'home-page))
+    :index #'home-page
+    :reddit #'reddit-page))
 
 
 ;; -------------------------

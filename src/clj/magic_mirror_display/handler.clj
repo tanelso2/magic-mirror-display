@@ -8,6 +8,8 @@
    [config.core :refer [env]]
    [hiccup.page :refer [include-js include-css html5]]
    [magic-mirror-display.middleware :refer [middleware]]
+   [magic-mirror-display.oauth :as oauth]
+   [magic-mirror-display.reddit :as reddit]
    [magic-mirror-display.spotify :as spotify]
    [magic-mirror-display.util :as util]
    [reitit.ring :as reitit-ring]
@@ -60,29 +62,11 @@
    :headers {"Content-Type" "text/html"}
    :body (loading-page)})
 
-(defn oauth-start-handler [_req]
-  (let [{:keys [id secret]} (spotify/get-spotify-creds)
-        url "https://accounts.spotify.com/authorize"
-        query-params {"client_id"     id
-                      "response_type" "code"
-                      "redirect_uri"  spotify/redirect-uri
-                      "scope" spotify/spotify-scopes}
-        full-url (util/unparse-url url query-params)]
-    (redirect full-url)))
-
 (defn oauth-page [req]
   (html5
    (head)
    [:body {:class "body-container"}
      "Successfully got a token! You can now close this tab"]))
-
-(defn oauth-handler
-  [request]
-  (let [code (get-in request [:query-params "code"])
-        _ (spotify/fetch-new-spotify-access-token! code)]
-    {:status 200
-     :headers {"Content-Type" "text/html"}
-     :body (oauth-page request)}))
 
 (defn now-playing-handler
   [_req]
@@ -94,15 +78,31 @@
        :headers {"Content-Type" "application/json"}
        :body now-playing})))
 
+(defn random-saved-link-handler
+  [_req]
+  (let [saved-links (reddit/fetch-saved-links)]
+    (if (empty? saved-links)
+      {:status 204
+       :body ""}
+      {:status 200
+       :headers {"Content-Type" "application/json"}
+       :body (json/write-str (rand-nth saved-links))})))
+
+
 (def app
-  (reitit-ring/ring-handler
-   (reitit-ring/router
-    [["/" {:get {:handler index-handler}}]
-     ["/weather" {:get {:handler weather-handler}}]
-     ["/interact" {:get {:handler oauth-handler}}]
-     ["/oauth" {:get {:handler oauth-start-handler}}]
-     ["/now-playing" {:get {:handler now-playing-handler}}]])
-   (reitit-ring/routes
-    (reitit-ring/create-resource-handler {:path "/" :root "/public"})
-    (reitit-ring/create-default-handler))
-   {:middleware middleware}))
+  (let [spotify spotify/spotify-oauth-config]
+    (reitit-ring/ring-handler
+     (reitit-ring/router
+      [["/" {:get {:handler index-handler}}]
+       ["/reddit" {:get {:handler index-handler}}]
+       ["/weather" {:get {:handler weather-handler}}]
+       ["/now-playing" {:get {:handler now-playing-handler}}]
+       ["/saved/random" {:get {:handler random-saved-link-handler}}]
+       [(:oauth-start-path spotify) {:get {:handler (fn [req] (oauth/oauth-start-handler spotify req))}}]
+       [(:oauth-finish-path spotify) {:get {:handler (fn [req] (oauth/oauth-finish-handler spotify req))}}]
+       [(:oauth-start-path reddit/reddit-oauth-config) {:get {:handler (fn [req] (oauth/oauth-start-handler reddit/reddit-oauth-config req))}}]
+       [(:oauth-finish-path reddit/reddit-oauth-config) {:get {:handler (fn [req] (oauth/oauth-finish-handler reddit/reddit-oauth-config req))}}]])
+     (reitit-ring/routes
+      (reitit-ring/create-resource-handler {:path "/" :root "/public"})
+      (reitit-ring/create-default-handler))
+     {:middleware middleware})))

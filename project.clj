@@ -23,7 +23,8 @@
                  [clj-http "3.12.2"]
                  [org.clojure/core.async "1.3.618"]
                  [org.clojure/data.json "2.3.1"]
-                 [cljs-http "0.1.46"]]
+                 [cljs-http "0.1.46"]
+                 [org.clojure/tools.trace "0.7.11"]]
 
   :jvm-opts ["-Xmx1G"]
   

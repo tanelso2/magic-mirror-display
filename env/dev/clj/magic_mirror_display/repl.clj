@@ -1,5 +1,6 @@
 (ns magic-mirror-display.repl
   (:use magic-mirror-display.handler
+        magic-mirror-display.reddit
         figwheel-sidecar.repl-api
         ring.server.standalone
         [ring.middleware file-info file]))
